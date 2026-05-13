@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gold Rush — 60 Second Arcade</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0a0a1a; color: #fff; font-family: monospace; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; min-height: 100vh; padding: 20px 12px; }
+  h1 { color: #f5c842; font-size: 22px; letter-spacing: 3px; margin-bottom: 4px; }
+  .tagline { font-size: 12px; color: rgba(255,255,255,0.45); margin-bottom: 14px; letter-spacing: 1px; }
+  #hud { display: flex; justify-content: space-between; width: 100%; max-width: 480px; margin-bottom: 8px; font-size: 14px; color: rgba(255,255,255,0.6); }
+  #hud span { color: #fff; font-weight: bold; }
+  canvas { display: block; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); max-width: 100%; }
+  #msg { margin-top: 10px; font-size: 13px; color: rgba(255,255,255,0.5); min-height: 18px; text-align: center; }
+  #start-btn { margin-top: 12px; padding: 10px 32px; background: transparent; border: 1px solid rgba(255,255,255,0.25); color: #f5c842; font-family: monospace; font-size: 15px; border-radius: 8px; cursor: pointer; letter-spacing: 1px; transition: border-color 0.2s; }
+  #start-btn:hover { border-color: #f5c842; }
+  .ctrl-row { display: flex; gap: 8px; justify-content: center; margin-top: 14px; }
+  .ctrl-btn { width: 48px; height: 48px; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: #fff; }
+  .ctrl-btn:active { transform: scale(0.92); background: rgba(255,255,255,0.12); }
+  #share-box { display: none; margin-top: 16px; background: rgba(245,200,66,0.08); border: 1px solid rgba(245,200,66,0.3); border-radius: 10px; padding: 14px 18px; max-width: 480px; width: 100%; text-align: center; }
+  #share-box p { font-size: 13px; color: rgba(255,255,255,0.7); margin-bottom: 10px; }
+  #share-box textarea { width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); color: #fff; font-family: monospace; font-size: 12px; border-radius: 6px; padding: 8px; resize: none; }
+  #copy-btn { margin-top: 8px; padding: 7px 20px; background: #f5c842; color: #0a0a1a; font-family: monospace; font-size: 13px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; }
+  footer { margin-top: 24px; font-size: 11px; color: rgba(255,255,255,0.2); }
+</style>
+</head>
+<body>
+
+<h1>⚡ GOLD RUSH</h1>
+<p class="tagline">60 SECONDS · COLLECT COINS · DODGE ENEMIES</p>
+
+<div id="hud">
+  <div>Score <span id="score-val">0</span></div>
+  <div>⏱ <span id="time-val">60</span>s</div>
+  <div>❤️ <span id="lives-val">❤️❤️❤️</span></div>
+</div>
+
+<canvas id="canvas" width="480" height="340"></canvas>
+
+<div id="msg">Press Start — collect gold, dodge the red enemies!</div>
+<button id="start-btn">▶ START GAME</button>
+
+<div class="ctrl-row">
+  <div style="display:flex;flex-direction:column;gap:6px;align-items:center;">
+    <button class="ctrl-btn" id="btn-up">↑</button>
+    <div style="display:flex;gap:6px;">
+      <button class="ctrl-btn" id="btn-left">←</button>
+      <button class="ctrl-btn" id="btn-down">↓</button>
+      <button class="ctrl-btn" id="btn-right">→</button>
+    </div>
+  </div>
+</div>
+
+<div id="share-box">
+  <p>🏆 Share your score on LinkedIn!</p>
+  <textarea id="share-text" rows="4"></textarea>
+  <button id="copy-btn" onclick="copyShare()">📋 Copy to Clipboard</button>
+</div>
+
+<footer>Built with ❤️ — can you beat the high score?</footer>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const W = 480, H = 340, TILE = 20;
+const COLS = W / TILE, ROWS = H / TILE;
+
+let state = 'idle', score = 0, lives = 3, timeLeft = 60;
+let player, coins, enemies, particles, timer;
+let keys = {}, moveTimer = 0;
+const MOVE_SPEED = 100;
+
+function initGame() {
+  score = 0; lives = 3; timeLeft = 60;
+  player = { x: 5, y: 8, inv: 0 };
+  coins = []; enemies = []; particles = [];
+  for (let i = 0; i < 12; i++) spawnCoin();
+  for (let i = 0; i < 4; i++) spawnEnemy();
+  document.getElementById('share-box').style.display = 'none';
+  updateHUD();
+}
+
+function spawnCoin() {
+  coins.push({ x: 1 + Math.floor(Math.random() * (COLS-2)), y: 1 + Math.floor(Math.random() * (ROWS-2)), pulse: Math.random() * Math.PI * 2 });
+}
+
+function spawnEnemy() {
+  const side = Math.floor(Math.random() * 4);
+  let ex = 1, ey = 1;
+  if (side===0){ex=Math.floor(Math.random()*COLS);ey=0;}
+  else if(side===1){ex=COLS-1;ey=Math.floor(Math.random()*ROWS);}
+  else if(side===2){ex=Math.floor(Math.random()*COLS);ey=ROWS-1;}
+  else{ex=0;ey=Math.floor(Math.random()*ROWS);}
+  const angle = Math.random()*Math.PI*2;
+  enemies.push({ x:ex*TILE+TILE/2, y:ey*TILE+TILE/2, dx:Math.cos(angle)*1.8, dy:Math.sin(angle)*1.8, wobble:0 });
+}
+
+function updateHUD() {
+  document.getElementById('score-val').textContent = score;
+  document.getElementById('time-val').textContent = timeLeft;
+  document.getElementById('lives-val').textContent = '❤️'.repeat(lives);
+}
+
+function addParticles(x, y, color) {
+  for (let i = 0; i < 8; i++) {
+    const a = (Math.PI*2/8)*i;
+    particles.push({ x, y, dx:Math.cos(a)*(1.5+Math.random()), dy:Math.sin(a)*(1.5+Math.random()), life:1, color });
+  }
+}
+
+let last = 0;
+function update(dt) {
+  if (state !== 'playing') return;
+  moveTimer += dt;
+  if (moveTimer > MOVE_SPEED) {
+    moveTimer = 0;
+    let nx = player.x, ny = player.y;
+    if (keys['ArrowLeft']||keys['a']) nx--;
+    if (keys['ArrowRight']||keys['d']) nx++;
+    if (keys['ArrowUp']||keys['w']) ny--;
+    if (keys['ArrowDown']||keys['s']) ny++;
+    if (nx>=0&&nx<COLS) player.x=nx;
+    if (ny>=0&&ny<ROWS) player.y=ny;
+  }
+  const px=player.x*TILE+TILE/2, py=player.y*TILE+TILE/2;
+  for (let i=coins.length-1;i>=0;i--) {
+    const c=coins[i];
+    if (Math.abs(c.x-player.x)<1&&Math.abs(c.y-player.y)<1) {
+      addParticles(c.x*TILE+TILE/2,c.y*TILE+TILE/2,'#f5c842');
+      coins.splice(i,1); score+=10; updateHUD(); spawnCoin();
+    }
+    c.pulse+=0.08;
+  }
+  enemies.forEach(e => {
+    e.wobble+=0.05; e.x+=e.dx; e.y+=e.dy;
+    if(e.x<TILE/2||e.x>W-TILE/2) e.dx*=-1;
+    if(e.y<TILE/2||e.y>H-TILE/2) e.dy*=-1;
+    if(Math.hypot(e.x-px,e.y-py)<TILE*0.9&&player.inv<=0){
+      lives--; player.inv=120;
+      addParticles(px,py,'#e24b4a'); updateHUD();
+      if(lives<=0) endGame('dead');
+    }
+  });
+  if(player.inv>0) player.inv--;
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i]; p.x+=p.dx; p.y+=p.dy; p.life-=0.05;
+    if(p.life<=0) particles.splice(i,1);
+  }
+}
+
+function draw(t) {
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#0a0a1a'; ctx.fillRect(0,0,W,H);
+  for(let c=0;c<COLS;c++) for(let r=0;r<ROWS;r++) {
+    if((c+r)%2===0){ctx.fillStyle='rgba(255,255,255,0.015)';ctx.fillRect(c*TILE,r*TILE,TILE,TILE);}
+  }
+  coins.forEach(c=>{
+    const cx=c.x*TILE+TILE/2,cy=c.y*TILE+TILE/2,r=5+Math.sin(c.pulse)*1.5;
+    ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fillStyle='#f5c842';ctx.fill();
+    ctx.beginPath();ctx.arc(cx-1.5,cy-1.5,2,0,Math.PI*2);ctx.fillStyle='#fff8d0';ctx.fill();
+  });
+  enemies.forEach(e=>{
+    ctx.save();ctx.translate(e.x,e.y);ctx.rotate(e.wobble);
+    ctx.fillStyle='#e24b4a';ctx.beginPath();
+    const sz=TILE*0.55;
+    for(let i=0;i<8;i++){const a=(Math.PI*2/8)*i,r2=i%2===0?sz:sz*0.55;i===0?ctx.moveTo(Math.cos(a)*r2,Math.sin(a)*r2):ctx.lineTo(Math.cos(a)*r2,Math.sin(a)*r2);}
+    ctx.closePath();ctx.fill();ctx.restore();
+  });
+  const px=player.x*TILE+TILE/2,py=player.y*TILE+TILE/2;
+  const blink=player.inv>0&&Math.floor(player.inv/8)%2===0;
+  if(!blink){
+    ctx.save();ctx.translate(px,py);
+    ctx.fillStyle='#7f77dd';ctx.beginPath();ctx.arc(0,0,TILE*0.48,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#eeedfe';
+    ctx.beginPath();ctx.arc(-3,-3,3.5,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(3,-3,3.5,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#26215c';
+    ctx.beginPath();ctx.arc(-3,-3,1.8,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(3,-3,1.8,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  }
+  particles.forEach(p=>{
+    ctx.globalAlpha=p.life;ctx.beginPath();ctx.arc(p.x,p.y,3*p.life,0,Math.PI*2);
+    ctx.fillStyle=p.color;ctx.fill();ctx.globalAlpha=1;
+  });
+  if(state==='idle'){
+    ctx.fillStyle='rgba(10,10,26,0.75)';ctx.fillRect(0,0,W,H);
+    ctx.textAlign='center';
+    ctx.fillStyle='#f5c842';ctx.font='bold 28px monospace';ctx.fillText('⚡ GOLD RUSH',W/2,H/2-28);
+    ctx.fillStyle='rgba(255,255,255,0.5)';ctx.font='13px monospace';
+    ctx.fillText('Collect coins · Dodge enemies · 60 seconds',W/2,H/2+8);
+    ctx.fillText('Arrow keys / WASD · D-pad on mobile',W/2,H/2+28);
+    ctx.textAlign='left';
+  }
+  if(state==='over'){
+    ctx.fillStyle='rgba(10,10,26,0.85)';ctx.fillRect(0,0,W,H);
+    ctx.textAlign='center';
+    ctx.fillStyle='#e24b4a';ctx.font='bold 26px monospace';ctx.fillText('GAME OVER',W/2,H/2-30);
+    ctx.fillStyle='#f5c842';ctx.font='20px monospace';ctx.fillText('Score: '+score,W/2,H/2+4);
+    ctx.fillStyle='rgba(255,255,255,0.45)';ctx.font='13px monospace';
+    ctx.fillText('Can you beat it? Share your score!',W/2,H/2+32);
+    ctx.textAlign='left';
+  }
+  if(state==='win'){
+    ctx.fillStyle='rgba(10,10,26,0.85)';ctx.fillRect(0,0,W,H);
+    ctx.textAlign='center';
+    ctx.fillStyle='#f5c842';ctx.font='bold 26px monospace';ctx.fillText('TIME\'S UP! 🏆',W/2,H/2-30);
+    ctx.fillStyle='#5dcaa5';ctx.font='20px monospace';ctx.fillText('Score: '+score,W/2,H/2+4);
+    ctx.fillStyle='rgba(255,255,255,0.45)';ctx.font='13px monospace';
+    ctx.fillText('Post your score on LinkedIn!',W/2,H/2+32);
+    ctx.textAlign='left';
+  }
+}
+
+function loop(t){
+  const dt=t-last;last=t;
+  update(dt);draw(t);
+  if(state==='playing') requestAnimationFrame(loop);
+}
+
+function startGame(){
+  initGame();state='playing';
+  document.getElementById('msg').textContent='Arrow keys / WASD to move!';
+  document.getElementById('start-btn').textContent='↺ RESTART';
+  clearInterval(timer);
+  timer=setInterval(()=>{
+    if(state!=='playing') return;
+    timeLeft--;updateHUD();
+    if(timeLeft<=0) endGame('win');
+    if(timeLeft===30&&enemies.length<7) spawnEnemy();
+    if(timeLeft===15){spawnEnemy();spawnEnemy();}
+  },1000);
+  last=performance.now();
+  requestAnimationFrame(loop);
+}
+
+function endGame(reason){
+  state=reason==='dead'?'over':'win';
+  clearInterval(timer);
+  document.getElementById('start-btn').textContent='▶ PLAY AGAIN';
+  const msg=reason==='dead'?'Caught! 😵 Try again?':'Time\'s up! 🏆 Share your score!';
+  document.getElementById('msg').textContent=msg;
+  const box=document.getElementById('share-box');
+  box.style.display='block';
+  document.getElementById('share-text').value=
+    `🎮 I just scored ${score} on Gold Rush!\n\nA 60-second arcade game — can you beat me?\n\n👉 [paste your link here]\n\n#BuildingInPublic #LinkedIn #GameDev`;
+  draw(0);
+}
+
+function copyShare(){
+  const ta=document.getElementById('share-text');
+  ta.select();document.execCommand('copy');
+  document.getElementById('copy-btn').textContent='✅ Copied!';
+  setTimeout(()=>document.getElementById('copy-btn').textContent='📋 Copy to Clipboard',2000);
+}
+
+document.getElementById('start-btn').addEventListener('click',startGame);
+document.addEventListener('keydown',e=>{keys[e.key]=true;if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key))e.preventDefault();});
+document.addEventListener('keyup',e=>{keys[e.key]=false;});
+
+const dirs={'btn-up':'ArrowUp','btn-down':'ArrowDown','btn-left':'ArrowLeft','btn-right':'ArrowRight'};
+Object.entries(dirs).forEach(([id,key])=>{
+  const btn=document.getElementById(id);
+  btn.addEventListener('touchstart',e=>{keys[key]=true;e.preventDefault();},{passive:false});
+  btn.addEventListener('touchend',()=>{keys[key]=false;});
+  btn.addEventListener('mousedown',()=>keys[key]=true);
+  btn.addEventListener('mouseup',()=>{keys[key]=false;});
+});
+
+draw(0);
+</script>
+</body>
+</html>
